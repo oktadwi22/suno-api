@@ -36,7 +36,28 @@ export async function POST(req: NextRequest) {
           }
         });
       }
-      return new NextResponse(JSON.stringify({ error: 'Internal server error: ' + JSON.stringify(error.response.data.detail) }), {
+      if (error.message?.includes('browser') || error.message?.includes('chrome') || error.message?.includes('executable')) {
+        return new NextResponse(JSON.stringify({
+          error: 'Browser automation error',
+          code: 'BROWSER_ERROR',
+          details: error.message
+        }), {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          }
+        });
+      }
+
+
+      // Generic error response
+      return new NextResponse(JSON.stringify({
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        details: error.message || 'Unknown error occurred',
+        errorObject: JSON.stringify(error, Object.getOwnPropertyNames(error))
+      }), {
         status: 500,
         headers: {
           'Content-Type': 'application/json',
