@@ -4,13 +4,18 @@ import pino from 'pino';
 import yn from 'yn';
 import { isPage, sleep, waitForRequests } from '@/lib/utils';
 import * as cookie from 'cookie';
+import chromium from '@sparticuz/chromium';
+
 import { randomUUID } from 'node:crypto';
 import { Solver } from '@2captcha/captcha-solver';
+import * as playwright from 'rebrowser-playwright-core';
 import { paramsCoordinates } from '@2captcha/captcha-solver/dist/structs/2captcha';
-import { BrowserContext, Page, Locator, chromium, firefox } from 'rebrowser-playwright-core';
+import { BrowserContext, Page, Locator, firefox } from 'rebrowser-playwright-core';
 import { createCursor, Cursor } from 'ghost-cursor-playwright';
 import { promises as fs } from 'fs';
 import path from 'node:path';
+import uniq from 'lodash.uniq';
+
 
 // sunoApi instance caching
 const globalForSunoApi = global as unknown as { sunoApiCache?: Map<string, SunoApi> };
@@ -48,6 +53,7 @@ class SunoApi {
   private sid?: string;
   private currentToken?: string;
   private deviceId?: string;
+  private isVercel: boolean;
   private userAgent?: string;
   private cookies: Record<string, string | undefined>;
   private solver = new Solver(process.env.TWOCAPTCHA_KEY + '');
@@ -55,6 +61,7 @@ class SunoApi {
   private cursor?: Cursor;
 
   constructor(cookies: string) {
+    this.isVercel = process.env.VERCEL_URL !== undefined;
     this.userAgent = new UserAgent(/Macintosh/).random().toString(); // Usually Mac systems get less amount of CAPTCHAs
     this.cookies = cookie.parse(cookies);
     this.deviceId = this.cookies.ajs_anonymous_id || randomUUID();
@@ -216,12 +223,9 @@ class SunoApi {
     const browser = process.env.BROWSER?.toLowerCase();
     switch (browser) {
       case 'firefox':
-        return firefox;
-      /*case 'webkit': ** doesn't work with rebrowser-patches
-      case 'safari':
-        return webkit;*/
+        return playwright.firefox;
       default:
-        return chromium;
+        return playwright.chromium;
     }
   }
 
@@ -230,7 +234,7 @@ class SunoApi {
    * @returns {BrowserContext}
    */
   private async launchBrowser(): Promise<BrowserContext> {
-    const args = [
+    let baseArgs = [
       '--disable-blink-features=AutomationControlled',
       '--disable-web-security',
       '--no-sandbox',
@@ -242,13 +246,31 @@ class SunoApi {
     ];
     // Check for GPU acceleration, as it is recommended to turn it off for Docker
     if (yn(process.env.BROWSER_DISABLE_GPU, { default: false }))
-      args.push('--enable-unsafe-swiftshader',
+      baseArgs.push('--enable-unsafe-swiftshader',
         '--disable-gpu',
         '--disable-setuid-sandbox');
-    const browser = await this.getBrowserType().launch({
-      args,
-      headless: yn(process.env.BROWSER_HEADLESS, { default: true })
-    });
+
+        logger.info({
+          msg: 'Launching browser',
+          isVercel: this.isVercel,
+          nodeEnv: process.env.NODE_ENV,
+          totalArgs: baseArgs.length
+        });
+        let browser: playwright.Browser;
+
+        if (this.isVercel) {
+          browser = await playwright.chromium.launch({
+            args: uniq([...baseArgs, ...chromium.args]),
+            executablePath: await chromium.executablePath(),
+            headless: true
+          });
+        } else {
+          browser = await this.getBrowserType().launch({
+            args: baseArgs,
+            headless: yn(process.env.BROWSER_HEADLESS, { default: true })
+          });
+        }
+
     const context = await browser.newContext({ userAgent: this.userAgent, locale: process.env.BROWSER_LOCALE, viewport: null });
     const cookies = [];
     const lax: 'Lax' | 'Strict' | 'None' = 'Lax';
