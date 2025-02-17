@@ -26,16 +26,21 @@ export async function POST(req: NextRequest) {
         }
       });
     } catch (error: any) {
-      console.error('Error generating custom audio:', JSON.stringify(error.response.data));
-      if (error.response.status === 402) {
-        return new NextResponse(JSON.stringify({ error: error.response.data.detail }), {
-          status: 402,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        });
+      console.error('Error generating custom audio:', error);
+
+      // Cek jika error memiliki response dan data
+      if (error.response?.data) {
+        if (error.response.status === 402) {
+          return new NextResponse(JSON.stringify({ error: error.response.data.detail }), {
+            status: 402,
+            headers: {
+              'Content-Type': 'application/json',
+              ...corsHeaders
+            }
+          });
+        }
       }
+
       if (error.message?.includes('browser') || error.message?.includes('chrome') || error.message?.includes('executable')) {
         return new NextResponse(JSON.stringify({
           error: 'Browser automation error',
@@ -49,7 +54,6 @@ export async function POST(req: NextRequest) {
           }
         });
       }
-
 
       // Generic error response
       return new NextResponse(JSON.stringify({
@@ -75,7 +79,6 @@ export async function POST(req: NextRequest) {
     });
   }
 }
-
 
 export async function OPTIONS(request: Request) {
   return new Response(null, {
